@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../../src/adaos/abi/scenario.schema.json
+id: morning_routine
+version: "0.1.0"
+name: "Утренний сценарий"
+description: "Последовательно озвучивает текущее время и погоду."
+trigger: manual
+vars:
+  greeting: "Доброе утро!"
+steps:
+  - name: get_time
+    call: skills.run
+    args:
+      skill: time_skill
+      topic: "nlp.intent.time.get"
+      payload: {}
+    save_as: time
+
+  - name: format_time
+    when: ${time.result.ok}
+    set:
+      time_text: ${time.result.message}
+
+  - name: fallback_time
+    when: ${not time.result.ok}
+    set:
+      time_text: "Время недоступно"
+
+  - name: get_weather
+    call: skills.run
+    args:
+      skill: weather_skill
+      topic: "nlp.intent.weather.get"
+      payload: {}
+    save_as: weather
+
+  - name: format_weather
+    when: ${weather.result.ok}
+    set:
+      weather_text: "Погода: ${weather.result.description} (${weather.result.temp}°C) в ${weather.result.city}"
+
+  - name: fallback_weather
+    when: ${not weather.result.ok}
+    set:
+      weather_text: ${weather.result.error}
+
+  - name: compose_message
+    set:
+      msg: |
+        Утреннее напоминание:
+        ${vars.greeting}
+        ${time_text}
+        ${weather_text}
+
+  - name: out_console
+    call: io.console.print
+    args:
+      text: ${msg}
+
+  - name: out_voice
+    call: io.voice.tts.speak
+    args:
+      text: ${msg}
