@@ -28,10 +28,13 @@ class _MiniPaths:
 
 
 def _run_git(args: list[str], cwd: Path) -> str:
-    result = subprocess.run([
-        "git",
-        *args,
-    ], cwd=str(cwd), check=True, capture_output=True, text=True)
+    result = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     return result.stdout.strip()
 
 
@@ -79,7 +82,8 @@ def _init_monorepo_with_conflict(tmp_path: Path) -> Path:
     handlers = skill_root / "handlers"
     handlers.mkdir(parents=True, exist_ok=True)
     (skill_root / "skill.yaml").write_text(
-        "id: time_skill\nname: Time\nversion: '0.1.0'\n", encoding="utf-8"
+        "id: time_skill\nname: Time\nversion: '0.1.0'\n",
+        encoding="utf-8",
     )
     (handlers / "main.py").write_text(
         "<<<<<<< HEAD\nprint('bad copy')\n=======\nprint('other branch')\n>>>>>>> conflict\n",
@@ -114,7 +118,7 @@ def monorepo(tmp_path) -> Path:
 
 
 @pytest.fixture
-def paths(tmp_path) -> TestPaths:
+def paths(tmp_path) -> _MiniPaths:
     return _make_paths(tmp_path)
 
 
@@ -156,10 +160,15 @@ def test_skill_install_falls_back_to_cached_copy(tmp_path, monorepo):
     fallback_skill = cache_root / "skills" / "time_skill"
     fallback_skill.mkdir(parents=True, exist_ok=True)
     (fallback_skill / "skill.yaml").write_text(
-        "id: time_skill\nname: Time\nversion: '0.1.0'\n", encoding="utf-8"
+        "id: time_skill\nname: Time\nversion: '0.1.0'\n",
+        encoding="utf-8",
     )
 
-    paths = _CachePaths(base=tmp_path / "workspace", cache_root=cache_root, package_root=Path(__file__).resolve())
+    paths = _CachePaths(
+        base=tmp_path / "workspace",
+        cache_root=cache_root,
+        package_root=Path(__file__).resolve(),
+    )
     repo = _make_skill_repo(paths, monorepo)
 
     meta = repo.install("time_skill")
@@ -172,7 +181,9 @@ def test_skill_install_recovers_from_conflicts(tmp_path):
     remote = _init_monorepo_with_conflict(tmp_path)
     cache_root = tmp_path / "cache"
     paths = _CachePaths(
-        base=tmp_path / "workspace", cache_root=cache_root, package_root=Path(__file__).resolve()
+        base=tmp_path / "workspace",
+        cache_root=cache_root,
+        package_root=Path(__file__).resolve(),
     )
     repo = _make_skill_repo(paths, remote)
 
@@ -233,9 +244,7 @@ def test_sparse_checkout_scope(monkeypatch, monorepo, paths):
     skill_repo.install("weather_skill")
     scenario_repo.install("greet_on_boot")
 
-    skills_present = {
-        child.name for child in paths.skills_dir().iterdir() if child.is_dir()
-    }
+    skills_present = {child.name for child in paths.skills_dir().iterdir() if child.is_dir()}
     assert skills_present == {"weather_skill"}
     sparse_file = paths.workspace_dir() / ".git" / "info" / "sparse-checkout"
     assert "skills/weather_skill" in sparse_file.read_text(encoding="utf-8")

@@ -35,7 +35,6 @@ async def on_time_intent(evt) -> None:
 
 def handle(_topic: str, _payload: Optional[dict] = None) -> None:
     """Local development entrypoint for the skill."""
-
     get_time()
 
 
