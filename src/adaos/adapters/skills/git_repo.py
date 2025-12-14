@@ -49,6 +49,24 @@ def _safe_join(root: Path, rel: str) -> Path:
     return p
 
 
+def _has_conflict_markers(skill_dir: Path) -> bool:
+    """Check if any file under the skill directory contains git conflict markers."""
+
+    markers = ("<<<<<<<", "=======", ">>>>>>>")
+    for file in skill_dir.rglob("*"):
+        if not file.is_file():
+            continue
+        # limit to likely text files to avoid decoding binary assets
+        if file.suffix.lower() in {".py", ".yaml", ".yml", ".json", ".md", ".txt"}:
+            try:
+                content = file.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            if any(marker in content for marker in markers):
+                return True
+    return False
+
+
 def _read_manifest(skill_dir: Path) -> SkillMeta:
     for fname in _MANIFEST_NAMES:
         p = skill_dir / fname
@@ -84,11 +102,15 @@ class GitSkillRepository(SkillRepository):
         roots: list[Path] = []
         primary = Path(self.paths.skills_dir())
         roots.append(primary)
+
         cache_attr = getattr(self.paths, "skills_cache_dir", None)
         if cache_attr:
             cache_root = cache_attr() if callable(cache_attr) else cache_attr
             if cache_root:
-                roots.append(Path(cache_root) / "skills")
+                cache_root = Path(cache_root)
+                # Support both `skills_cache_dir/skills/<skill>` and legacy `skills_cache_dir/<skill>` layouts.
+                roots.extend([cache_root, cache_root / "skills"])
+
         uniq: list[Path] = []
         seen: set[Path] = set()
         for root in roots:
@@ -97,6 +119,27 @@ class GitSkillRepository(SkillRepository):
                 seen.add(resolved)
                 uniq.append(root)
         return uniq
+
+    def _find_local_skill(self, skill_id: str) -> Optional[Path]:
+        """Locate a skill directory in cache/bundled roots to recover missing sparse targets."""
+
+        for root in self._candidate_roots():
+            candidate = root / skill_id
+            if not candidate.exists():
+                continue
+            try:
+                meta = _read_manifest(candidate)
+            except Exception:
+                continue
+            if meta and meta.id.value == skill_id:
+                return candidate
+        # Bundled fallback (e.g., when running directly from the source tree).
+        pkg_root = getattr(self.paths, "package_dir", None)
+        if pkg_root:
+            bundled = Path(pkg_root).parent.parent / ".adaos" / "skills" / skill_id
+            if bundled.exists():
+                return bundled
+        return None
 
     def _ensure_monorepo(self) -> None:
         if os.getenv("ADAOS_TESTING") == "1":
@@ -163,9 +206,34 @@ class GitSkillRepository(SkillRepository):
         try:
             wait_for_materialized(skill_dir, files=_MANIFEST_NAMES)
         except FileNotFoundError as exc:  # pragma: no cover - defensive logging
+            fallback = self._find_local_skill(name)
+            if fallback:
+                skill_dir.parent.mkdir(parents=True, exist_ok=True)
+                if skill_dir.exists():
+                    if remove_tree:
+                        remove_tree(str(skill_dir))
+                    else:
+                        shutil.rmtree(skill_dir)
+                shutil.copytree(fallback, skill_dir)
+                return _read_manifest(skill_dir)
+
             sparse.update(remove=[target])
             self.git.rm_cached(str(workspace_root), target)
             raise FileNotFoundError(f"skill '{name}' not present after sync") from exc
+
+        # If git left unresolved conflict markers, prefer a bundled copy to unblock installs.
+        if _has_conflict_markers(skill_dir):
+            fallback = self._find_local_skill(name)
+            if not fallback:
+                raise ValueError(
+                    f"skill '{name}' contains unresolved merge conflict markers and no fallback was found"
+                )
+            if remove_tree:
+                remove_tree(str(skill_dir))
+            else:
+                shutil.rmtree(skill_dir)
+            shutil.copytree(fallback, skill_dir)
+            return _read_manifest(skill_dir)
         return _read_manifest(skill_dir)
 
     def uninstall(self, skill_id: str) -> None:

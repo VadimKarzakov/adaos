@@ -68,6 +68,29 @@ def _init_monorepo(tmp_path: Path) -> Path:
     return remote
 
 
+def _init_monorepo_with_conflict(tmp_path: Path) -> Path:
+    remote = tmp_path / "remote_conflict"
+    remote.mkdir()
+    _run_git(["init"], cwd=remote)
+    _run_git(["config", "user.email", "adaos-tests@example.com"], cwd=remote)
+    _run_git(["config", "user.name", "AdaOS Tests"], cwd=remote)
+
+    skill_root = remote / "skills" / "time_skill"
+    handlers = skill_root / "handlers"
+    handlers.mkdir(parents=True, exist_ok=True)
+    (skill_root / "skill.yaml").write_text(
+        "id: time_skill\nname: Time\nversion: '0.1.0'\n", encoding="utf-8"
+    )
+    (handlers / "main.py").write_text(
+        "<<<<<<< HEAD\nprint('bad copy')\n=======\nprint('other branch')\n>>>>>>> conflict\n",
+        encoding="utf-8",
+    )
+
+    _run_git(["add", "-A"], cwd=remote)
+    _run_git(["commit", "-m", "seed conflicted skill"], cwd=remote)
+    return remote
+
+
 def _make_paths(tmp_path: Path) -> _MiniPaths:
     base = tmp_path / "workspace"
     paths = _MiniPaths(base)
@@ -116,6 +139,50 @@ def test_skill_reinstall_happy_path(monkeypatch, monorepo, paths):
     assert meta2.id.value == "weather_skill"
     assert (paths.skills_dir() / "weather_skill").exists()
     assert _git_status_clean(paths.workspace_dir())
+
+
+class _CachePaths(_MiniPaths):
+    def __init__(self, base: Path, cache_root: Path, package_root: Path):
+        super().__init__(base)
+        self._cache_root = cache_root
+        self.package_dir = package_root
+
+    def skills_cache_dir(self) -> Path:
+        return self._cache_root
+
+
+def test_skill_install_falls_back_to_cached_copy(tmp_path, monorepo):
+    cache_root = tmp_path / "cache"
+    fallback_skill = cache_root / "skills" / "time_skill"
+    fallback_skill.mkdir(parents=True, exist_ok=True)
+    (fallback_skill / "skill.yaml").write_text(
+        "id: time_skill\nname: Time\nversion: '0.1.0'\n", encoding="utf-8"
+    )
+
+    paths = _CachePaths(base=tmp_path / "workspace", cache_root=cache_root, package_root=Path(__file__).resolve())
+    repo = _make_skill_repo(paths, monorepo)
+
+    meta = repo.install("time_skill")
+
+    assert meta.id.value == "time_skill"
+    assert (paths.skills_dir() / "time_skill" / "skill.yaml").exists()
+
+
+def test_skill_install_recovers_from_conflicts(tmp_path):
+    remote = _init_monorepo_with_conflict(tmp_path)
+    cache_root = tmp_path / "cache"
+    paths = _CachePaths(
+        base=tmp_path / "workspace", cache_root=cache_root, package_root=Path(__file__).resolve()
+    )
+    repo = _make_skill_repo(paths, remote)
+
+    meta = repo.install("time_skill")
+
+    handler = paths.skills_dir() / "time_skill" / "handlers" / "main.py"
+    assert meta.id.value == "time_skill"
+    content = handler.read_text(encoding="utf-8")
+    assert "<<<<<<<" not in content and "=======" not in content and ">>>>>>>" not in content
+    assert "Simple time skill" in content
 
 
 def test_scenario_reinstall_happy_path(monkeypatch, monorepo, paths):
