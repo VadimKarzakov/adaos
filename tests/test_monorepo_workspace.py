@@ -118,6 +118,33 @@ def test_skill_reinstall_happy_path(monkeypatch, monorepo, paths):
     assert _git_status_clean(paths.workspace_dir())
 
 
+class _CachePaths(_MiniPaths):
+    def __init__(self, base: Path, cache_root: Path, package_root: Path):
+        super().__init__(base)
+        self._cache_root = cache_root
+        self.package_dir = package_root
+
+    def skills_cache_dir(self) -> Path:
+        return self._cache_root
+
+
+def test_skill_install_falls_back_to_cached_copy(tmp_path, monorepo):
+    cache_root = tmp_path / "cache"
+    fallback_skill = cache_root / "skills" / "time_skill"
+    fallback_skill.mkdir(parents=True, exist_ok=True)
+    (fallback_skill / "skill.yaml").write_text(
+        "id: time_skill\nname: Time\nversion: '0.1.0'\n", encoding="utf-8"
+    )
+
+    paths = _CachePaths(base=tmp_path / "workspace", cache_root=cache_root, package_root=Path(__file__).resolve())
+    repo = _make_skill_repo(paths, monorepo)
+
+    meta = repo.install("time_skill")
+
+    assert meta.id.value == "time_skill"
+    assert (paths.skills_dir() / "time_skill" / "skill.yaml").exists()
+
+
 def test_scenario_reinstall_happy_path(monkeypatch, monorepo, paths):
     monkeypatch.setenv("ADAOS_TESTING", "0")
     repo = _make_scenario_repo(paths, monorepo)
