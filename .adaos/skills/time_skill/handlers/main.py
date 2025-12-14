@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+
 from typing import Dict, Optional
+=======
+from typing import Dict
+
 
 from adaos.sdk.core.decorators import subscribe, tool
 from adaos.sdk.data.bus import emit
@@ -32,7 +36,6 @@ async def on_time_intent(evt) -> None:
         trace_id=evt.trace_id,
     )
 
-
 def handle(_topic: str, _payload: Optional[dict] = None) -> None:
     """Local development entrypoint for the skill."""
 
@@ -41,3 +44,4 @@ def handle(_topic: str, _payload: Optional[dict] = None) -> None:
 
 def handle_intent(_intent: str, _entities: Optional[dict] = None) -> None:
     handle("nlp.intent.time.get", _entities)
+
