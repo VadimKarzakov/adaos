@@ -49,6 +49,24 @@ def _safe_join(root: Path, rel: str) -> Path:
     return p
 
 
+def _has_conflict_markers(skill_dir: Path) -> bool:
+    """Check if any file under the skill directory contains git conflict markers."""
+
+    markers = ("<<<<<<<", "=======", ">>>>>>>")
+    for file in skill_dir.rglob("*"):
+        if not file.is_file():
+            continue
+        # limit to likely text files to avoid decoding binary assets
+        if file.suffix.lower() in {".py", ".yaml", ".yml", ".json", ".md", ".txt"}:
+            try:
+                content = file.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            if any(marker in content for marker in markers):
+                return True
+    return False
+
+
 def _read_manifest(skill_dir: Path) -> SkillMeta:
     for fname in _MANIFEST_NAMES:
         p = skill_dir / fname
@@ -202,6 +220,20 @@ class GitSkillRepository(SkillRepository):
             sparse.update(remove=[target])
             self.git.rm_cached(str(workspace_root), target)
             raise FileNotFoundError(f"skill '{name}' not present after sync") from exc
+
+        # If git left unresolved conflict markers, prefer a bundled copy to unblock installs.
+        if _has_conflict_markers(skill_dir):
+            fallback = self._find_local_skill(name)
+            if not fallback:
+                raise ValueError(
+                    f"skill '{name}' contains unresolved merge conflict markers and no fallback was found"
+                )
+            if remove_tree:
+                remove_tree(str(skill_dir))
+            else:
+                shutil.rmtree(skill_dir)
+            shutil.copytree(fallback, skill_dir)
+            return _read_manifest(skill_dir)
         return _read_manifest(skill_dir)
 
     def uninstall(self, skill_id: str) -> None:

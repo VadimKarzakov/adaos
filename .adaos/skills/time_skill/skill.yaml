@@ -12,11 +12,9 @@ tools:
   - name: "get_time"
     description: Возвращает локальное время человека
     entry: "handlers.main:get_time"
-
     input_schema:
       type: object
       properties: {}
-
     output_schema:
       type: object
       required: [ok, time]
