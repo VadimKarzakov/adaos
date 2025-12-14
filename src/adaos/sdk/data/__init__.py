@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 from .bus import BusNotAvailable, emit, get_meta, on
 from .context import clear_current_skill, get_current_skill, set_current_skill
 from .env import get_audio_out_backend, get_stt_backend, get_tts_backend
@@ -13,6 +15,20 @@ from .memory import delete, get, list, put
 from .secrets import read, write
 from .skill_memory import get as skill_memory_get
 from .skill_memory import set as skill_memory_set
+
+
+@contextmanager
+def ctx_subnet(_: str):
+    """Backwards-compatible no-op subnet context helper.
+
+    Older skills imported :func:`ctx_subnet` but newer SDK versions moved away
+    from this API.  Keeping a dummy context manager here prevents import-time
+    failures for skills that still reference the symbol while preserving
+    runtime behavior (the helper never mutates global state).
+    """
+
+    yield
+
 
 __all__ = [
     "BusNotAvailable",
@@ -39,4 +55,5 @@ __all__ = [
     "get_tts_backend",
     "get_stt_backend",
     "get_audio_out_backend",
+    "ctx_subnet",
 ]
