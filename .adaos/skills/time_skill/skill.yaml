@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../../src/adaos/abi/skill.schema.json
+name: time_skill
+version: "0.1.0"
+description: Навык, возвращающий текущее время
+runtime:
+  python: "3.11"
+events:
+  subscribe:
+    - "nlp.intent.time.get"
+default_tool: "get_time"
+tools:
+  - name: "get_time"
+    description: Возвращает локальное время человека
+    entry: "handlers.main:get_time"
+    output_schema:
+      type: object
+      required: [ok, time]
+      properties:
+        ok: { type: boolean }
+        time: { type: string }
+        message: { type: string }
